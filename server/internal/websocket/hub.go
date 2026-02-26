@@ -82,6 +82,23 @@ func (h *Hub) GetOnlineUsers() map[string]bool {
 	return online
 }
 
+// SendToUser sends a message to a specific user by UserID.
+func (h *Hub) SendToUser(userID string, msg Message) {
+	data, err := EncodeMessage(msg)
+	if err != nil {
+		return
+	}
+	h.clientsMutex.RLock()
+	defer h.clientsMutex.RUnlock()
+	if client, ok := h.clients[userID]; ok {
+		select {
+		case client.Send <- data:
+		default:
+			// buffer full, skip
+		}
+	}
+}
+
 func (h *Hub) Run() {
 	for {
 		select {

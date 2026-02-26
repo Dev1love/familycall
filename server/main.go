@@ -164,6 +164,12 @@ func setupRouter(h *handlers.Handlers, cfg *config.Config) *gin.Engine {
 		protected.POST("/chats", h.CreateChat)
 		protected.GET("/chats/:id", h.GetChat)
 		protected.PUT("/chats/:id", h.UpdateChat)
+
+		// Message routes
+		protected.GET("/chats/:id/messages", h.ListMessages)
+		protected.POST("/chats/:id/messages", h.SendMessage)
+		protected.PUT("/messages/:id", h.EditMessage)
+		protected.DELETE("/messages/:id", h.DeleteMessage)
 	}
 
 	// WebSocket route
