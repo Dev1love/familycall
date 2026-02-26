@@ -18,6 +18,9 @@ func Initialize(dbPath string) (*gorm.DB, error) {
 		&models.User{},
 		&models.Invite{},
 		&models.PushSubscription{},
+		&models.Chat{},
+		&models.ChatMember{},
+		&models.Message{},
 	); err != nil {
 		return nil, err
 	}
