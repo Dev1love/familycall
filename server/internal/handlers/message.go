@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"fmt"
 	"html"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -113,6 +115,52 @@ func (h *Handlers) SendMessage(c *gin.Context) {
 			},
 		})
 	}
+
+	// Send push notifications to offline members
+	go func() {
+		// Load chat info for notification title
+		var chat models.Chat
+		if err := h.db.First(&chat, "id = ?", chatID).Error; err != nil {
+			log.Printf("[PUSH] Failed to load chat %s for push notification: %v", chatID, err)
+			return
+		}
+
+		senderName := msg.Sender.Username
+
+		for _, m := range members {
+			if h.hub.IsUserOnline(m.UserID) {
+				continue
+			}
+
+			var title, body string
+			if chat.Type == "direct" {
+				title = senderName
+				body = msg.Content
+			} else {
+				// Group chat
+				if chat.Name != nil && *chat.Name != "" {
+					title = *chat.Name
+				} else {
+					title = "Group chat"
+				}
+				body = fmt.Sprintf("%s: %s", senderName, msg.Content)
+			}
+
+			// Truncate body to 200 chars
+			if len(body) > 200 {
+				body = body[:197] + "..."
+			}
+
+			data := map[string]interface{}{
+				"type": "chat_message",
+				"url":  fmt.Sprintf("/chat/%s", chatID),
+			}
+
+			if err := h.SendPushNotification(m.UserID, title, body, data); err != nil {
+				log.Printf("[PUSH] Failed to send chat push to user %s: %v", m.UserID, err)
+			}
+		}
+	}()
 
 	c.JSON(http.StatusCreated, msg)
 }
