@@ -158,6 +158,12 @@ func setupRouter(h *handlers.Handlers, cfg *config.Config) *gin.Engine {
 		protected.DELETE("/push/subscribe", h.UnsubscribePush)
 		protected.GET("/backup", h.Backup)
 		protected.POST("/restore", h.Restore)
+
+		// Chat routes
+		protected.GET("/chats", h.ListChats)
+		protected.POST("/chats", h.CreateChat)
+		protected.GET("/chats/:id", h.GetChat)
+		protected.PUT("/chats/:id", h.UpdateChat)
 	}
 
 	// WebSocket route
