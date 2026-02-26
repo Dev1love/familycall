@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
 import { useAuthStore } from '../stores/authStore'
@@ -28,6 +28,9 @@ export default function ChatPage() {
   const user = useAuthStore((s) => s.user)
   const [messages, setMessages] = useState<Message[]>([])
   const [chat, setChat] = useState<ChatInfo | null>(null)
+  const [typingUsers, setTypingUsers] = useState<string[]>([])
+  const typingTimeoutRef = useRef<Map<string, NodeJS.Timeout>>(new Map())
+  const lastTypingSent = useRef<number>(0)
 
   useEffect(() => {
     if (!id) return
@@ -42,11 +45,37 @@ export default function ChatPage() {
       if (msg.type === 'chat:message' && msg.data?.chat_id === id) {
         setMessages((prev) => [...prev, msg.data.message])
       }
+      if (msg.type === 'chat:typing' && msg.data?.chat_id === id) {
+        const senderName = msg.data?.sender_name || msg.from || 'Someone'
+        setTypingUsers((prev) => {
+          if (!prev.includes(senderName)) return [...prev, senderName]
+          return prev
+        })
+
+        // Clear after 3 seconds
+        const existing = typingTimeoutRef.current.get(senderName)
+        if (existing) clearTimeout(existing)
+        typingTimeoutRef.current.set(
+          senderName,
+          setTimeout(() => {
+            setTypingUsers((prev) => prev.filter((u) => u !== senderName))
+            typingTimeoutRef.current.delete(senderName)
+          }, 3000)
+        )
+      }
     },
     [id]
   )
 
   const { send } = useWebSocket(onWsMessage)
+
+  // Mark as read when messages load or new ones arrive
+  useEffect(() => {
+    if (messages.length > 0 && id) {
+      const lastMsg = messages[messages.length - 1]
+      send({ type: 'chat:mark_read', data: { chat_id: id, message_id: lastMsg.id } })
+    }
+  }, [messages.length, id, send])
 
   const handleSend = async (content: string) => {
     const msg = await apiFetch<Message>(`/chats/${id}/messages`, {
@@ -57,7 +86,11 @@ export default function ChatPage() {
   }
 
   const handleTyping = () => {
-    send({ type: 'chat:typing', data: { chat_id: id } })
+    const now = Date.now()
+    if (now - lastTypingSent.current > 2000) {
+      send({ type: 'chat:typing', data: { chat_id: id } })
+      lastTypingSent.current = now
+    }
   }
 
   const getChatName = () => {
@@ -77,6 +110,11 @@ export default function ChatPage() {
         )}
       </header>
       <MessageList messages={messages} />
+      {typingUsers.length > 0 && (
+        <div className="typing-indicator">
+          {typingUsers.join(', ')} typing...
+        </div>
+      )}
       <ChatInput onSend={handleSend} onTyping={handleTyping} />
     </div>
   )

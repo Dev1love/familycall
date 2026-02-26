@@ -386,6 +386,13 @@ body {
   cursor: pointer;
 }
 
+.typing-indicator {
+  padding: 0.25rem 1rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
 /* Loading */
 .loading {
   display: flex;
