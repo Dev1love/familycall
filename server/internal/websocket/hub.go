@@ -189,11 +189,23 @@ func (h *Hub) Run() {
 
 			log.Printf("Routing message: type=%s from=%s to=%s", msg.Type, msg.From, msg.To)
 
-			// Send message to specific recipient
+			// Handle chat and group-call types that forward to a specific user
+			switch msg.Type {
+			case TypeChatTyping, TypeChatRead, TypeGroupCallSignal:
+				if msg.To != "" {
+					h.SendToUser(msg.To, msg)
+					log.Printf("Forwarded %s from %s to %s", msg.Type, msg.From, msg.To)
+				} else {
+					log.Printf("WARNING: %s message from %s has no recipient", msg.Type, msg.From)
+				}
+				continue
+			}
+
+			// Default routing: send message to specific recipient
 			h.clientsMutex.RLock()
 			targetClient, ok := h.clients[msg.To]
 			h.clientsMutex.RUnlock()
-			
+
 			if ok {
 				log.Printf("Target client found, sending message to %s", msg.To)
 				select {
@@ -212,7 +224,7 @@ func (h *Hub) Run() {
 				h.clientsMutex.RUnlock()
 				log.Printf("WARNING: Target client %s not found. Available clients: %v", msg.To, clientIDs)
 				// If it's a call-request and user is offline, store it for when they come online
-				if msg.Type == "call-request" {
+				if msg.Type == TypeCallRequest {
 					if h.pendingCalls[msg.To] == nil {
 						h.pendingCalls[msg.To] = make([]Message, 0)
 					}
