@@ -21,6 +21,8 @@ func Initialize(dbPath string) (*gorm.DB, error) {
 		&models.Chat{},
 		&models.ChatMember{},
 		&models.Message{},
+		&models.GroupCall{},
+		&models.GroupCallParticipant{},
 	); err != nil {
 		return nil, err
 	}
