@@ -170,6 +170,11 @@ func setupRouter(h *handlers.Handlers, cfg *config.Config) *gin.Engine {
 		protected.POST("/chats/:id/messages", h.SendMessage)
 		protected.PUT("/messages/:id", h.EditMessage)
 		protected.DELETE("/messages/:id", h.DeleteMessage)
+
+		// Group call routes
+		protected.POST("/chats/:id/calls", h.StartGroupCall)
+		protected.POST("/calls/:id/join", h.JoinGroupCall)
+		protected.POST("/calls/:id/leave", h.LeaveGroupCall)
 	}
 
 	// WebSocket route
