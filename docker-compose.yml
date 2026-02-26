@@ -1,0 +1,12 @@
+services:
+  familycall:
+    build: .
+    # Or use pre-built: image: ghcr.io/dev1love/familycall:latest
+    ports:
+      - "443:443"
+      - "3478:3478/udp"
+    volumes:
+      - ./data:/data
+    environment:
+      - DOMAIN=${DOMAIN:-family.example.com}
+    restart: unless-stopped
