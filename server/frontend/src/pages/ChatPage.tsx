@@ -29,7 +29,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [chat, setChat] = useState<ChatInfo | null>(null)
   const [typingUsers, setTypingUsers] = useState<string[]>([])
-  const typingTimeoutRef = useRef<Map<string, NodeJS.Timeout>>(new Map())
+  const typingTimeoutRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
   const lastTypingSent = useRef<number>(0)
 
   useEffect(() => {
