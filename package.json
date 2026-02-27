@@ -1,0 +1,17 @@
+{
+  "name": "familycall",
+  "version": "1.0.0",
+  "description": "A self-hosted family communication app with video and audio calling capabilities. Family Callbook enables secure, private video and audio calls between family members using WebRTC technology, with built-in TURN/STUN server support for reliable connectivity even behind NATs.",
+  "main": "index.js",
+  "scripts": {
+    "test": "cd server && go test ./... && cd frontend && npm test",
+    "test:e2e": "npx playwright test",
+    "test:all": "cd server && go test ./... && cd frontend && npm test && cd ../.. && npx playwright test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@playwright/test": "^1.58.2"
+  }
+}

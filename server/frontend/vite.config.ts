@@ -9,8 +9,13 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/api': 'https://localhost',
-      '/ws': { target: 'wss://localhost', ws: true },
+      '/api': 'http://localhost:8080',
+      '/ws': { target: 'ws://localhost:8080', ws: true },
     },
+  },
+  test: {
+    environment: 'happy-dom',
+    globals: true,
+    setupFiles: ['./src/test/setup.ts'],
   },
 })

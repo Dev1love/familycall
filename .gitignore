@@ -7,3 +7,8 @@ config.json
 server/builds
 server/familycall.db
 server/familycall-server
+server/familycall
+node_modules/
+server/frontend/node_modules/
+test-results/
+playwright-report/
