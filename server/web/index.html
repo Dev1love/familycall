@@ -124,6 +124,13 @@
                     </div>
                 </div>
 
+                <!-- Group Call Button -->
+                <div id="group-call-section" style="margin-bottom: 1rem;">
+                    <button id="start-group-call-btn" class="btn btn-primary" style="width: 100%;">
+                        👥 <span data-i18n="group_call">Group Call</span>
+                    </button>
+                </div>
+
                 <!-- Contacts Section -->
                 <section id="contacts-section">
                     <div class="section-header">
@@ -196,6 +203,39 @@
                 <div class="call-info">
                     <p id="call-status" data-i18n="connecting">Connecting...</p>
                     <p id="call-contact-name"></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Group Call Screen -->
+        <div id="group-call-screen" class="screen">
+            <div class="group-call-container">
+                <div class="group-call-info-bar">
+                    <p id="group-call-status">Group Call</p>
+                    <p id="group-call-participants-count"></p>
+                </div>
+
+                <div id="video-grid" class="video-grid">
+                    <!-- Video tiles inserted dynamically -->
+                </div>
+
+                <video id="group-local-video" class="group-local-video" autoplay playsinline muted></video>
+
+                <div class="call-controls">
+                    <button id="group-mute-btn" class="btn-icon call-btn">🔇</button>
+                    <button id="group-video-toggle-btn" class="btn-icon call-btn">📹</button>
+                    <button id="group-end-call-btn" class="btn-icon call-btn end-call">📞</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Group Call Invite Banner -->
+        <div id="group-call-invite-banner" class="group-call-invite-banner" style="display: none;">
+            <div class="group-call-invite-content">
+                <span id="group-call-invite-text">Group call incoming...</span>
+                <div class="group-call-invite-actions">
+                    <button id="group-call-join-btn" class="btn btn-primary btn-small">Join</button>
+                    <button id="group-call-dismiss-btn" class="btn-icon">×</button>
                 </div>
             </div>
         </div>

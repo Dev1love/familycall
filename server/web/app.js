@@ -10,6 +10,12 @@ let audioOutputDevices = [];
 let currentAudioOutputId = 'default'; // 'default' for speaker, 'earpiece' or device ID
 let contactsRefreshInterval = null;
 
+// Group call state
+let groupCall = null;         // { callId, chatId }
+let groupPeers = new Map();   // userId -> { pc, stream, username }
+let groupLocalStream = null;
+let pendingGroupCallInvite = null; // { callId, chatId, fromUsername }
+
 // i18n Configuration
 let translations = {};
 let currentLang = 'en';
@@ -823,6 +829,12 @@ function displayContacts(contacts) {
     // Store contacts data for later updates
     contactsData = contacts;
 
+    // Show/hide group call button based on contacts
+    const groupCallSection = document.getElementById('group-call-section');
+    if (groupCallSection) {
+        groupCallSection.style.display = contacts.length > 0 ? 'block' : 'none';
+    }
+
     if (contacts.length === 0) {
         emptyEl.style.display = 'block';
         return;
@@ -1530,6 +1542,18 @@ function handleWebSocketMessage(message) {
             break;
         case 'ice-candidate':
             handleIceCandidate(message);
+            break;
+        case 'call:group_invite':
+            handleGroupCallInvite(message);
+            break;
+        case 'call:group_join':
+            handleGroupPeerJoin(message);
+            break;
+        case 'call:group_leave':
+            handleGroupPeerLeave(message);
+            break;
+        case 'call:group_signal':
+            handleGroupSignal(message.from, message.data);
             break;
         case 'ping':
             // Respond to ping to keep connection alive
@@ -2281,6 +2305,37 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Group call controls
+    document.getElementById('start-group-call-btn').addEventListener('click', startGroupCall);
+    document.getElementById('group-end-call-btn').addEventListener('click', leaveGroupCall);
+    document.getElementById('group-call-join-btn').addEventListener('click', () => {
+        if (pendingGroupCallInvite) {
+            joinGroupCall(pendingGroupCallInvite.callId);
+            hideGroupCallInviteBanner();
+        }
+    });
+    document.getElementById('group-call-dismiss-btn').addEventListener('click', hideGroupCallInviteBanner);
+
+    document.getElementById('group-mute-btn').addEventListener('click', () => {
+        if (groupLocalStream) {
+            const audioTrack = groupLocalStream.getAudioTracks()[0];
+            if (audioTrack) {
+                audioTrack.enabled = !audioTrack.enabled;
+                document.getElementById('group-mute-btn').textContent = audioTrack.enabled ? '🔇' : '🔈';
+            }
+        }
+    });
+
+    document.getElementById('group-video-toggle-btn').addEventListener('click', () => {
+        if (groupLocalStream) {
+            const videoTrack = groupLocalStream.getVideoTracks()[0];
+            if (videoTrack) {
+                videoTrack.enabled = !videoTrack.enabled;
+                document.getElementById('group-video-toggle-btn').textContent = videoTrack.enabled ? '📹' : '🚫';
+            }
+        }
+    });
+
     // Audio output device menu
     const audioOutputBtn = document.getElementById('audio-output-btn');
     if (audioOutputBtn) {
@@ -2740,6 +2795,10 @@ function showScreen(screenId) {
     // Don't hide call-screen if there's an active call (unless explicitly showing call-screen)
     if (screenId === 'app-screen' && currentCall) {
         console.log('Preventing app-screen from hiding active call');
+        return;
+    }
+    if (screenId === 'app-screen' && groupCall) {
+        console.log('Preventing app-screen from hiding active group call');
         return;
     }
 
@@ -3206,5 +3265,490 @@ async function acceptInvite() {
         hideLoading();
         showError(errorEl, error.message);
     }
+}
+
+// ============================================
+// Group Call Functions
+// ============================================
+
+// Start a group call: create a group chat with all contacts, then start call
+async function startGroupCall() {
+    if (groupCall) {
+        console.log('[GROUP] Already in a group call');
+        return;
+    }
+
+    if (!contactsData || contactsData.length === 0) {
+        alert(t('no_contacts') || 'No contacts available');
+        return;
+    }
+
+    try {
+        showLoading(t('starting_group_call') || 'Starting group call...');
+
+        // Collect all contact user IDs
+        const memberIds = contactsData.map(c => c.id || c.contact_id);
+
+        // Create a group chat with all contacts
+        console.log('[GROUP] Creating group chat with members:', memberIds);
+        const chatResponse = await fetch(`${API_BASE}/chats`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify({
+                name: 'Group Call',
+                member_ids: memberIds
+            })
+        });
+
+        if (!chatResponse.ok) {
+            const err = await chatResponse.json();
+            throw new Error(err.error || 'Failed to create group chat');
+        }
+
+        const chatData = await chatResponse.json();
+        const chatId = chatData.id;
+        console.log('[GROUP] Group chat created:', chatId);
+
+        // Start a group call in the chat
+        console.log('[GROUP] Starting group call in chat:', chatId);
+        const callResponse = await fetch(`${API_BASE}/chats/${chatId}/calls`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify({
+                call_type: 'video'
+            })
+        });
+
+        if (!callResponse.ok) {
+            const err = await callResponse.json();
+            throw new Error(err.error || 'Failed to start group call');
+        }
+
+        const callData = await callResponse.json();
+        const callId = callData.id || callData.call_id;
+        console.log('[GROUP] Group call started:', callId);
+
+        // Get local media
+        groupLocalStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        const localVideo = document.getElementById('group-local-video');
+        localVideo.srcObject = groupLocalStream;
+        try { await localVideo.play(); } catch (e) { console.error('[GROUP] Local video play error:', e); }
+
+        // Set group call state
+        groupCall = { callId, chatId };
+
+        // Show group call screen
+        showScreen('group-call-screen');
+        updateGroupCallStatus(t('waiting_for_participants') || 'Waiting for participants...');
+        updateVideoGrid();
+
+        hideLoading();
+
+        // Join the call (adds us as participant)
+        console.log('[GROUP] Joining call:', callId);
+        const joinResponse = await fetch(`${API_BASE}/calls/${callId}/join`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
+        });
+
+        if (!joinResponse.ok) {
+            console.error('[GROUP] Failed to join call');
+        } else {
+            const joinData = await joinResponse.json();
+            console.log('[GROUP] Joined call, participants:', joinData.participants);
+
+            // Create peer connections with existing participants (we are initiator)
+            if (joinData.participants) {
+                for (const p of joinData.participants) {
+                    if (p.user_id !== currentUser.id) {
+                        const username = (p.user && p.user.username) || p.user_id;
+                        await createGroupPeerConnection(p.user_id, username, true);
+                    }
+                }
+            }
+        }
+
+    } catch (error) {
+        hideLoading();
+        console.error('[GROUP] Error starting group call:', error);
+        alert((t('call_failed') || 'Call failed') + ': ' + error.message);
+        leaveGroupCall();
+    }
+}
+
+// Join an existing group call
+async function joinGroupCall(callId) {
+    if (groupCall) {
+        console.log('[GROUP] Already in a group call');
+        return;
+    }
+
+    try {
+        showLoading(t('joining_group_call') || 'Joining group call...');
+
+        // Get local media
+        groupLocalStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        const localVideo = document.getElementById('group-local-video');
+        localVideo.srcObject = groupLocalStream;
+        try { await localVideo.play(); } catch (e) { console.error('[GROUP] Local video play error:', e); }
+
+        // Set group call state
+        groupCall = { callId, chatId: null };
+
+        // Show group call screen
+        showScreen('group-call-screen');
+        updateGroupCallStatus(t('connecting') || 'Connecting...');
+        updateVideoGrid();
+
+        // Join the call via API
+        console.log('[GROUP] Joining call:', callId);
+        const joinResponse = await fetch(`${API_BASE}/calls/${callId}/join`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
+        });
+
+        if (!joinResponse.ok) {
+            const err = await joinResponse.json();
+            throw new Error(err.error || 'Failed to join group call');
+        }
+
+        const joinData = await joinResponse.json();
+        console.log('[GROUP] Joined call, participants:', joinData.participants);
+
+        if (joinData.chat_id) {
+            groupCall.chatId = joinData.chat_id;
+        }
+
+        // Create peer connections with existing participants (we are initiator)
+        if (joinData.participants) {
+            for (const p of joinData.participants) {
+                if (p.user_id !== currentUser.id) {
+                    const username = (p.user && p.user.username) || p.user_id;
+                    await createGroupPeerConnection(p.user_id, username, true);
+                }
+            }
+        }
+
+        updateGroupCallStatus(t('connected') || 'Connected');
+        hideLoading();
+
+    } catch (error) {
+        hideLoading();
+        console.error('[GROUP] Error joining group call:', error);
+        alert((t('call_failed') || 'Call failed') + ': ' + error.message);
+        leaveGroupCall();
+    }
+}
+
+// Leave the group call
+async function leaveGroupCall() {
+    console.log('[GROUP] Leaving group call');
+
+    const callId = groupCall ? groupCall.callId : null;
+
+    // Close all peer connections
+    groupPeers.forEach((peer, userId) => {
+        console.log('[GROUP] Closing peer connection for:', userId);
+        if (peer.pc) peer.pc.close();
+    });
+    groupPeers.clear();
+
+    // Stop local stream
+    if (groupLocalStream) {
+        groupLocalStream.getTracks().forEach(track => track.stop());
+        groupLocalStream = null;
+    }
+
+    // Clear video elements
+    const localVideo = document.getElementById('group-local-video');
+    if (localVideo) localVideo.srcObject = null;
+    const videoGrid = document.getElementById('video-grid');
+    if (videoGrid) videoGrid.innerHTML = '';
+
+    groupCall = null;
+    pendingGroupCallInvite = null;
+
+    showScreen('app-screen');
+
+    // Notify server
+    if (callId) {
+        try {
+            await fetch(`${API_BASE}/calls/${callId}/leave`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${authToken}`
+                }
+            });
+            console.log('[GROUP] Left call on server');
+        } catch (error) {
+            console.error('[GROUP] Error leaving call on server:', error);
+        }
+    }
+}
+
+// Create a peer connection for a group call participant
+async function createGroupPeerConnection(remoteUserId, username, isInitiator) {
+    console.log('[GROUP] Creating peer connection for:', remoteUserId, 'username:', username, 'initiator:', isInitiator);
+
+    // Ensure TURN config is loaded
+    if (!rtcConfig || !rtcConfig.iceServers || rtcConfig.iceServers.length === 0) {
+        await loadTURNConfig();
+    }
+
+    const pc = new RTCPeerConnection(rtcConfig);
+
+    // Add local tracks
+    if (groupLocalStream) {
+        groupLocalStream.getTracks().forEach(track => pc.addTrack(track, groupLocalStream));
+    }
+
+    // Handle remote tracks
+    const remoteStream = new MediaStream();
+    pc.ontrack = (event) => {
+        console.log('[GROUP] Received track from:', remoteUserId, event.track.kind);
+        event.streams[0]?.getTracks().forEach(track => remoteStream.addTrack(track));
+        // Update the peer's stream
+        const peer = groupPeers.get(remoteUserId);
+        if (peer) {
+            peer.stream = remoteStream;
+            groupPeers.set(remoteUserId, peer);
+        }
+        updateVideoGrid();
+    };
+
+    // ICE candidates
+    pc.onicecandidate = (event) => {
+        if (event.candidate) {
+            sendWebSocketMessage({
+                type: 'call:group_signal',
+                to: remoteUserId,
+                data: {
+                    type: 'ice-candidate',
+                    candidate: event.candidate
+                }
+            });
+        }
+    };
+
+    // Connection state
+    pc.onconnectionstatechange = () => {
+        console.log('[GROUP] Peer', remoteUserId, 'connection state:', pc.connectionState);
+        if (pc.connectionState === 'connected') {
+            updateGroupCallStatus(t('connected') || 'Connected');
+        } else if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+            console.log('[GROUP] Peer connection failed/closed for:', remoteUserId);
+        }
+    };
+
+    // Store peer
+    groupPeers.set(remoteUserId, { pc, stream: remoteStream, username });
+    updateVideoGrid();
+
+    // If initiator, create and send offer
+    if (isInitiator) {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        sendWebSocketMessage({
+            type: 'call:group_signal',
+            to: remoteUserId,
+            data: {
+                type: 'offer',
+                sdp: pc.localDescription
+            }
+        });
+        console.log('[GROUP] Sent offer to:', remoteUserId);
+    }
+
+    return pc;
+}
+
+// Handle group signal (offer/answer/ICE)
+async function handleGroupSignal(fromUserId, data) {
+    if (!groupCall) {
+        console.warn('[GROUP] Received signal but not in group call');
+        return;
+    }
+
+    console.log('[GROUP] Signal from:', fromUserId, 'type:', data.type);
+
+    if (data.type === 'offer') {
+        // Received offer — create peer connection if needed, then answer
+        let peer = groupPeers.get(fromUserId);
+        let pc = peer?.pc;
+
+        if (!pc && groupLocalStream) {
+            // Find username from contacts
+            const contact = contactsData.find(c => (c.id || c.contact_id) === fromUserId);
+            const username = contact ? contact.contact_name : fromUserId;
+            pc = await createGroupPeerConnection(fromUserId, username, false);
+        }
+
+        if (pc) {
+            await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            sendWebSocketMessage({
+                type: 'call:group_signal',
+                to: fromUserId,
+                data: {
+                    type: 'answer',
+                    sdp: pc.localDescription
+                }
+            });
+            console.log('[GROUP] Sent answer to:', fromUserId);
+        }
+    } else if (data.type === 'answer') {
+        const peer = groupPeers.get(fromUserId);
+        if (peer?.pc) {
+            await peer.pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+            console.log('[GROUP] Set remote description from answer for:', fromUserId);
+        }
+    } else if (data.type === 'ice-candidate') {
+        const peer = groupPeers.get(fromUserId);
+        if (peer?.pc) {
+            try {
+                await peer.pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+            } catch (err) {
+                console.error('[GROUP] Error adding ICE candidate from:', fromUserId, err);
+            }
+        }
+    }
+}
+
+// Handle incoming group call invite
+function handleGroupCallInvite(message) {
+    console.log('[GROUP] Received group call invite:', message);
+
+    // Don't show invite if already in a call
+    if (groupCall || currentCall) {
+        console.log('[GROUP] Already in a call, ignoring invite');
+        return;
+    }
+
+    const callId = message.data?.call_id || message.call_id;
+    const chatId = message.data?.chat_id || message.chat_id;
+    const fromUsername = message.data?.caller_username || message.from;
+
+    if (!callId) {
+        console.error('[GROUP] No call_id in invite message');
+        return;
+    }
+
+    pendingGroupCallInvite = { callId, chatId, fromUsername };
+
+    // Show invite banner
+    const banner = document.getElementById('group-call-invite-banner');
+    const text = document.getElementById('group-call-invite-text');
+    if (banner && text) {
+        text.textContent = `👥 ${fromUsername} ${t('started_group_call') || 'started a group call'}`;
+        banner.style.display = 'block';
+    }
+}
+
+// Handle a new peer joining the group call
+function handleGroupPeerJoin(message) {
+    console.log('[GROUP] Peer joined:', message.from);
+
+    if (!groupCall) {
+        console.warn('[GROUP] Received peer join but not in group call');
+        return;
+    }
+
+    // The new peer will send us an offer, we wait for it
+    // handleGroupSignal will create the peer connection when the offer arrives
+    const username = message.data?.username || message.from;
+    console.log('[GROUP] Waiting for offer from new peer:', message.from, 'username:', username);
+}
+
+// Handle a peer leaving the group call
+function handleGroupPeerLeave(message) {
+    console.log('[GROUP] Peer left:', message.from);
+
+    if (!groupCall) return;
+
+    const peer = groupPeers.get(message.from);
+    if (peer) {
+        if (peer.pc) peer.pc.close();
+        groupPeers.delete(message.from);
+        updateVideoGrid();
+    }
+
+    // Update status
+    updateGroupCallStatus(
+        groupPeers.size > 0
+            ? (t('connected') || 'Connected')
+            : (t('waiting_for_participants') || 'Waiting for participants...')
+    );
+}
+
+// Hide the group call invite banner
+function hideGroupCallInviteBanner() {
+    const banner = document.getElementById('group-call-invite-banner');
+    if (banner) banner.style.display = 'none';
+    pendingGroupCallInvite = null;
+}
+
+// Update the video grid with all participants
+function updateVideoGrid() {
+    const grid = document.getElementById('video-grid');
+    if (!grid) return;
+
+    grid.innerHTML = '';
+
+    const peerCount = groupPeers.size;
+    // Set grid class based on participant count
+    grid.className = 'video-grid';
+    if (peerCount === 1) grid.classList.add('grid-1');
+    else if (peerCount === 2) grid.classList.add('grid-2');
+    else if (peerCount === 3) grid.classList.add('grid-3');
+    else if (peerCount === 4) grid.classList.add('grid-4');
+    else if (peerCount === 5) grid.classList.add('grid-5');
+    else if (peerCount === 6) grid.classList.add('grid-6');
+    else if (peerCount > 6) grid.classList.add('grid-many');
+
+    groupPeers.forEach((peer, userId) => {
+        const tile = document.createElement('div');
+        tile.className = 'video-tile';
+        tile.id = `video-tile-${userId}`;
+
+        const video = document.createElement('video');
+        video.autoplay = true;
+        video.playsInline = true;
+        if (peer.stream) {
+            video.srcObject = peer.stream;
+            video.play().catch(e => console.error('[GROUP] Error playing peer video:', e));
+        }
+
+        const label = document.createElement('div');
+        label.className = 'video-tile-label';
+        label.textContent = peer.username || userId;
+
+        tile.appendChild(video);
+        tile.appendChild(label);
+        grid.appendChild(tile);
+    });
+
+    // Update participant count
+    const countEl = document.getElementById('group-call-participants-count');
+    if (countEl) {
+        const total = peerCount + 1; // +1 for self
+        countEl.textContent = `${total} ${t('participants') || 'participant' + (total !== 1 ? 's' : '')}`;
+    }
+}
+
+// Update group call status text
+function updateGroupCallStatus(status) {
+    const el = document.getElementById('group-call-status');
+    if (el) el.textContent = status;
 }
 
