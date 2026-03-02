@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"familycall/server/internal/models"
 
@@ -321,8 +322,37 @@ func (h *Handlers) GetTURNConfig(c *gin.Context) {
 		},
 	}
 
-	// Add our TURN server if available
-	if h.turnServer != nil {
+	// Use external TURN (e.g. Metered.ca) if configured
+	meteredDomain := os.Getenv("METERED_DOMAIN")
+	meteredAPIKey := os.Getenv("METERED_API_KEY")
+	if meteredDomain != "" && meteredAPIKey != "" {
+		iceServers = append(iceServers,
+			map[string]interface{}{
+				"urls": "stun:" + meteredDomain + ":80",
+			},
+			map[string]interface{}{
+				"urls":       "turn:" + meteredDomain + ":80",
+				"username":   meteredAPIKey,
+				"credential": meteredAPIKey,
+			},
+			map[string]interface{}{
+				"urls":       "turn:" + meteredDomain + ":80?transport=tcp",
+				"username":   meteredAPIKey,
+				"credential": meteredAPIKey,
+			},
+			map[string]interface{}{
+				"urls":       "turn:" + meteredDomain + ":443",
+				"username":   meteredAPIKey,
+				"credential": meteredAPIKey,
+			},
+			map[string]interface{}{
+				"urls":       "turns:" + meteredDomain + ":443?transport=tcp",
+				"username":   meteredAPIKey,
+				"credential": meteredAPIKey,
+			},
+		)
+	} else if h.turnServer != nil {
+		// Fall back to built-in TURN server
 		creds := h.turnServer.GetCredentials()
 		turnURL := fmt.Sprintf("turn:%s:%d", host, h.config.TURNPort)
 		stunURL := fmt.Sprintf("stun:%s:%d", host, h.config.TURNPort)
