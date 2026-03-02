@@ -445,16 +445,25 @@ main {
 }
 
 #start-group-call-btn {
-    background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-light) 100%);
+    background: linear-gradient(135deg, var(--accent) 0%, #5A7E9A 100%);
     color: white;
-    border-radius: var(--radius-lg);
-    padding: 1rem 1.5rem;
-    font-size: 1.05rem;
+    border-radius: var(--radius-md);
+    padding: 0.85rem 1.5rem;
+    font-size: 1rem;
     font-weight: 700;
-    box-shadow: 0 4px 20px rgba(212, 101, 74, 0.3);
+    box-shadow: 0 3px 14px rgba(107, 143, 173, 0.25);
     border: none;
     position: relative;
     overflow: hidden;
+}
+
+#start-group-call-btn:hover {
+    box-shadow: 0 5px 20px rgba(107, 143, 173, 0.35);
+    transform: translateY(-1px);
+}
+
+#start-group-call-btn:active {
+    transform: translateY(0);
 }
 
 #start-group-call-btn::before {
@@ -561,7 +570,7 @@ main {
 
 .contact-actions {
     display: flex;
-    gap: 0.25rem;
+    gap: 0.4rem;
     flex-wrap: wrap;
     justify-content: flex-end;
     align-items: center;
@@ -569,20 +578,21 @@ main {
 }
 
 .contact-actions .btn-icon {
-    font-size: 1rem;
-    padding: 0.35rem;
-    min-width: 2.1rem;
-    height: 2.1rem;
+    font-size: 1.2rem;
+    padding: 0.4rem;
+    min-width: 2.5rem;
+    height: 2.5rem;
     display: flex;
     align-items: center;
     justify-content: center;
     border-radius: var(--radius-sm);
     transition: all 0.2s ease;
+    background: rgba(45, 36, 32, 0.03);
 }
 
 .contact-actions .btn-icon:hover {
-    background: rgba(212, 101, 74, 0.08);
-    transform: scale(1.1);
+    background: rgba(212, 101, 74, 0.1);
+    transform: scale(1.08);
 }
 
 .empty-state {
@@ -906,57 +916,64 @@ main {
 }
 
 .prompt-banner {
-    background: var(--primary-color);
-    color: white;
-    padding: 0.875rem 1.25rem;
-    margin-bottom: 1.25rem;
-    border-radius: var(--radius-md);
-    box-shadow: 0 2px 12px rgba(212, 101, 74, 0.2);
+    background: var(--surface-solid);
+    color: var(--text-primary);
+    padding: 0.75rem 1rem;
+    margin-bottom: 0.75rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-sm);
     position: relative;
     animation: fadeInUp 0.4s ease;
 }
 
 .prompt-content {
     display: flex;
-    flex-wrap: wrap;
+    flex-direction: row;
     align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
+    gap: 0.625rem;
     max-width: 600px;
     margin: 0 auto;
+    flex-wrap: nowrap;
 }
 
-.prompt-content span {
-    flex: 1;
+.prompt-content > span {
+    flex: 1 1 auto;
     font-weight: 600;
+    font-size: 0.875rem;
     min-width: 0;
     word-break: break-word;
+    color: var(--text-primary);
+    line-height: 1.4;
 }
 
-.prompt-content .btn-small {
-    flex-shrink: 0;
-    background: rgba(255, 255, 255, 0.2);
+.prompt-content > .btn-small {
+    flex: 0 0 auto;
+    background: var(--primary-color);
     color: white;
-    border: 1px solid rgba(255, 255, 255, 0.25);
+    border: none;
     font-weight: 700;
+    padding: 0.4rem 1rem;
+    font-size: 0.8rem;
+    white-space: nowrap;
+    width: auto;
 }
 
-.prompt-content .btn-small:hover {
-    background: rgba(255, 255, 255, 0.3);
+.prompt-content > .btn-small:hover {
+    background: var(--primary-dark);
 }
 
-.prompt-content .btn-icon {
-    flex-shrink: 0;
-    color: white;
-    font-size: 1.5rem;
-    padding: 0;
+.prompt-content > .btn-icon {
+    flex: 0 0 auto;
+    color: var(--text-secondary);
+    font-size: 1.25rem;
+    padding: 0.2rem;
     min-width: auto;
-    opacity: 0.8;
 }
 
 .prompt-content .btn-icon:hover {
-    opacity: 1;
-    background: transparent;
+    color: var(--text-primary);
+    background: rgba(0, 0, 0, 0.05);
 }
 
 .invite-message {
@@ -1338,38 +1355,28 @@ main {
     }
 
     .contact-actions {
-        gap: 0.15rem;
+        gap: 0.3rem;
     }
 
     .contact-actions .btn-icon {
-        font-size: 0.9rem;
-        padding: 0.25rem;
-        min-width: 1.85rem;
-        height: 1.85rem;
+        font-size: 1.1rem;
+        padding: 0.35rem;
+        min-width: 2.3rem;
+        height: 2.3rem;
     }
 
     .prompt-content {
-        flex-direction: column;
-        align-items: stretch;
         gap: 0.5rem;
+        flex-direction: row;
+        flex-wrap: nowrap;
     }
 
-    .prompt-content span {
-        width: 100%;
+    .prompt-content > span {
+        font-size: 0.8rem;
     }
 
-    .prompt-content .btn-small {
-        width: 100%;
-    }
-
-    .prompt-content .btn-icon {
-        position: absolute;
-        top: 0.5rem;
-        right: 0.5rem;
-    }
-
-    .prompt-banner {
-        position: relative;
+    .prompt-content > .btn-small {
+        width: auto;
     }
 
     #local-video {

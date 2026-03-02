@@ -90,5 +90,11 @@
   "restore_success": "Backup restored successfully. Please restart the server.",
   "restore_failed": "Failed to restore backup",
   "select_backup_file": "Select backup file",
-  "backup_restore_only_organizer": "Only the family organizer can backup/restore"
+  "backup_restore_only_organizer": "Only the family organizer can backup/restore",
+  "group_call": "Group Call",
+  "starting_group_call": "Starting group call...",
+  "joining_group_call": "Joining group call...",
+  "waiting_for_participants": "Waiting for participants...",
+  "started_group_call": "started a group call",
+  "participants": "participants"
 }
