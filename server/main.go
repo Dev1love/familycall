@@ -44,13 +44,23 @@ func main() {
 	frontendURI := flag.String("frontend-uri", "", "Frontend URI base (e.g., https://domain.host) (required with --backend-only)")
 	flag.Parse()
 
+	// Allow environment variables as fallback for flags (useful for PaaS like novps.io)
+	if port := os.Getenv("PORT"); port != "" && *backendPort == "" {
+		*backendPort = port
+		*backendOnly = true
+	}
+	if uri := os.Getenv("FRONTEND_URI"); uri != "" && *frontendURI == "" {
+		*frontendURI = uri
+	}
+
 	// Validate flags
 	if *backendOnly {
 		if *backendPort == "" {
 			log.Fatal("Error: --port is required when --backend-only is specified")
 		}
 		if *frontendURI == "" {
-			log.Fatal("Error: --frontend-uri is required when --backend-only is specified")
+			// Auto-generate frontend URI if not specified
+			*frontendURI = "http://localhost:" + *backendPort
 		}
 		// Normalize frontend URI (remove trailing slash)
 		*frontendURI = strings.TrimSuffix(*frontendURI, "/")
@@ -81,14 +91,20 @@ func main() {
 	hub := websocket.NewHub()
 	go hub.Run()
 
-	// Initialize TURN server
-	turnServer, err := turn.Initialize(cfg.TURNPort, cfg.TURNRealm)
-	if err != nil {
-		log.Fatalf("Failed to initialize TURN server: %v", err)
+	// Initialize TURN server (skip if DISABLE_TURN=true, e.g. on PaaS without UDP support)
+	var turnServer *turn.TURNServer
+	if os.Getenv("DISABLE_TURN") == "true" {
+		log.Println("TURN server disabled via DISABLE_TURN=true")
+	} else {
+		var err error
+		turnServer, err = turn.Initialize(cfg.TURNPort, cfg.TURNRealm)
+		if err != nil {
+			log.Printf("WARNING: Failed to initialize TURN server: %v (calls may not work behind strict NAT)", err)
+		} else {
+			defer turnServer.Close()
+			log.Printf("TURN server started on port %d", cfg.TURNPort)
+		}
 	}
-	defer turnServer.Close()
-
-	log.Printf("TURN server started on port %d", cfg.TURNPort)
 
 	// Initialize handlers
 	h := handlers.New(db, hub, cfg, turnServer, translationsFS)

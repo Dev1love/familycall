@@ -314,25 +314,28 @@ func (h *Handlers) GetTURNConfig(c *gin.Context) {
 		host = host[:idx]
 	}
 	
-	// Get credentials from TURN server
-	creds := h.turnServer.GetCredentials()
-	
-	// TURN server URL - format: turn:host:port
-	// Also include STUN URL (TURN servers support STUN protocol)
-	turnURL := fmt.Sprintf("turn:%s:%d", host, h.config.TURNPort)
-	stunURL := fmt.Sprintf("stun:%s:%d", host, h.config.TURNPort)
-	
+	// Build ICE servers list
 	iceServers := []map[string]interface{}{
 		{
-			"urls": stunURL,
+			"urls": "stun:stun.l.google.com:19302",
 		},
-		{
+	}
+
+	// Add our TURN server if available
+	if h.turnServer != nil {
+		creds := h.turnServer.GetCredentials()
+		turnURL := fmt.Sprintf("turn:%s:%d", host, h.config.TURNPort)
+		stunURL := fmt.Sprintf("stun:%s:%d", host, h.config.TURNPort)
+		iceServers = append(iceServers, map[string]interface{}{
+			"urls": stunURL,
+		})
+		iceServers = append(iceServers, map[string]interface{}{
 			"urls":       turnURL,
 			"username":   creds.Username,
 			"credential": creds.Password,
-		},
+		})
 	}
-	
+
 	log.Printf("TURN config requested - returning %d ICE servers for host %s", len(iceServers), host)
 	
 	c.JSON(http.StatusOK, gin.H{
