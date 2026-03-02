@@ -4,10 +4,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 	"familycall/server/internal/models"
 
 	"github.com/gin-gonic/gin"
@@ -304,70 +306,65 @@ func min(a, b int) int {
 }
 
 func (h *Handlers) GetTURNConfig(c *gin.Context) {
-	// Get TURN server configuration - use only our TURN server
-	// TURN servers also support STUN, so we don't need separate STUN servers
-	// Note: We use "turn:" (not "turns:") because our TURN server is UDP-only
-	// TURNS (TLS) requires TCP/TLS, but we're using UDP which doesn't support TLS
-	// Media encryption is handled by DTLS-SRTP in WebRTC
-	
 	host := c.Request.Host
 	if idx := strings.Index(host, ":"); idx != -1 {
 		host = host[:idx]
 	}
-	
-	// Build ICE servers list
-	iceServers := []map[string]interface{}{
-		{
-			"urls": "stun:stun.l.google.com:19302",
-		},
-	}
 
 	// Use external TURN (e.g. Metered.ca) if configured
+	// Fetch credentials from Metered API (returns proper username/credential)
 	meteredDomain := os.Getenv("METERED_DOMAIN")
 	meteredAPIKey := os.Getenv("METERED_API_KEY")
 	if meteredDomain != "" && meteredAPIKey != "" {
-		iceServers = append(iceServers,
-			map[string]interface{}{
-				"urls": "stun:" + meteredDomain + ":80",
-			},
-			map[string]interface{}{
-				"urls":       "turn:" + meteredDomain + ":80",
-				"username":   meteredAPIKey,
-				"credential": meteredAPIKey,
-			},
-			map[string]interface{}{
-				"urls":       "turn:" + meteredDomain + ":80?transport=tcp",
-				"username":   meteredAPIKey,
-				"credential": meteredAPIKey,
-			},
-			map[string]interface{}{
-				"urls":       "turn:" + meteredDomain + ":443",
-				"username":   meteredAPIKey,
-				"credential": meteredAPIKey,
-			},
-			map[string]interface{}{
-				"urls":       "turns:" + meteredDomain + ":443?transport=tcp",
-				"username":   meteredAPIKey,
-				"credential": meteredAPIKey,
-			},
-		)
-	} else if h.turnServer != nil {
-		// Fall back to built-in TURN server
+		apiURL := fmt.Sprintf("https://%s/api/v1/turn/credentials?apiKey=%s", meteredDomain, meteredAPIKey)
+
+		client := &http.Client{Timeout: 5 * time.Second}
+		resp, err := client.Get(apiURL)
+		if err != nil {
+			log.Printf("[TURN] Error fetching Metered credentials: %v", err)
+		} else {
+			defer resp.Body.Close()
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				log.Printf("[TURN] Error reading Metered response: %v", err)
+			} else if resp.StatusCode == http.StatusOK {
+				// Metered API returns a JSON array of ICE server configs directly
+				var iceServers []map[string]interface{}
+				if err := json.Unmarshal(body, &iceServers); err != nil {
+					log.Printf("[TURN] Error parsing Metered response: %v", err)
+				} else {
+					log.Printf("[TURN] Got %d ICE servers from Metered API", len(iceServers))
+					c.JSON(http.StatusOK, gin.H{
+						"iceServers": iceServers,
+					})
+					return
+				}
+			} else {
+				log.Printf("[TURN] Metered API returned status %d: %s", resp.StatusCode, string(body))
+			}
+		}
+	}
+
+	// Fallback: built-in TURN or Google STUN only
+	iceServers := []map[string]interface{}{
+		{"urls": "stun:stun.l.google.com:19302"},
+	}
+
+	if h.turnServer != nil {
 		creds := h.turnServer.GetCredentials()
 		turnURL := fmt.Sprintf("turn:%s:%d", host, h.config.TURNPort)
 		stunURL := fmt.Sprintf("stun:%s:%d", host, h.config.TURNPort)
-		iceServers = append(iceServers, map[string]interface{}{
-			"urls": stunURL,
-		})
-		iceServers = append(iceServers, map[string]interface{}{
-			"urls":       turnURL,
-			"username":   creds.Username,
-			"credential": creds.Password,
-		})
+		iceServers = append(iceServers,
+			map[string]interface{}{"urls": stunURL},
+			map[string]interface{}{
+				"urls":       turnURL,
+				"username":   creds.Username,
+				"credential": creds.Password,
+			},
+		)
 	}
 
-	log.Printf("TURN config requested - returning %d ICE servers for host %s", len(iceServers), host)
-	
+	log.Printf("[TURN] Returning %d ICE servers (fallback) for host %s", len(iceServers), host)
 	c.JSON(http.StatusOK, gin.H{
 		"iceServers": iceServers,
 	})
