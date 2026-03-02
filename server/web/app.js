@@ -1565,30 +1565,95 @@ function handleWebSocketMessage(message) {
     }
 }
 
-// Handle incoming call
+// Handle incoming call - show incoming call screen with accept/decline buttons
 async function handleIncomingCall(message) {
     console.log('Incoming call from:', message.data.caller_username);
 
-    // Show call screen immediately
+    // Store pending incoming call info
     currentCall = {
         contactId: message.from,
         callType: message.call_type
     };
-    updateCallContactName(message.data.caller_username);
-    updateCallStatus(t('incoming_call'));
-    showScreen('call-screen');
 
-    // Auto-accept call
-    console.log('Auto-accepting call...');
+    // Show incoming call screen
+    const callerEl = document.getElementById('incoming-call-caller');
+    const typeEl = document.getElementById('incoming-call-type');
+    callerEl.textContent = message.data.caller_username;
+    typeEl.textContent = message.call_type === 'video' ? t('incoming_video_call') : t('incoming_audio_call');
+    showScreen('incoming-call-screen');
+
+    // Play ringtone
+    startRingtone();
+}
+
+// Accept incoming call
+function acceptIncomingCall() {
+    console.log('Accepting incoming call from:', currentCall.contactId);
+    stopRingtone();
 
     // Send call-accept message
     sendWebSocketMessage({
         type: 'call-accept',
-        to: message.from
+        to: currentCall.contactId
     });
 
-    // Wait for offer
+    // Switch to call screen
+    updateCallContactName(document.getElementById('incoming-call-caller').textContent);
     updateCallStatus(t('waiting_for_offer'));
+    showScreen('call-screen');
+}
+
+// Decline incoming call
+function declineIncomingCall() {
+    console.log('Declining incoming call from:', currentCall.contactId);
+    stopRingtone();
+
+    // Send call-end message to caller
+    sendWebSocketMessage({
+        type: 'call-end',
+        to: currentCall.contactId
+    });
+
+    currentCall = null;
+    showScreen('app-screen');
+}
+
+// Ringtone using Web Audio API
+let ringtoneInterval = null;
+let ringtoneContext = null;
+
+function startRingtone() {
+    stopRingtone();
+    try {
+        ringtoneContext = new (window.AudioContext || window.webkitAudioContext)();
+        function playRing() {
+            if (!ringtoneContext) return;
+            const osc = ringtoneContext.createOscillator();
+            const gain = ringtoneContext.createGain();
+            osc.connect(gain);
+            gain.connect(ringtoneContext.destination);
+            osc.frequency.value = 440;
+            gain.gain.value = 0.3;
+            osc.start();
+            gain.gain.exponentialRampToValueAtTime(0.01, ringtoneContext.currentTime + 0.8);
+            osc.stop(ringtoneContext.currentTime + 0.8);
+        }
+        playRing();
+        ringtoneInterval = setInterval(playRing, 2000);
+    } catch (e) {
+        console.log('Could not play ringtone:', e);
+    }
+}
+
+function stopRingtone() {
+    if (ringtoneInterval) {
+        clearInterval(ringtoneInterval);
+        ringtoneInterval = null;
+    }
+    if (ringtoneContext) {
+        ringtoneContext.close().catch(() => {});
+        ringtoneContext = null;
+    }
 }
 
 // Handle offer
@@ -2033,6 +2098,8 @@ function makeLocalVideoDraggable() {
 
 // End call
 function endCall() {
+    stopRingtone();
+
     // Notify the other party that the call is ending
     if (currentCall && currentCall.contactId && wsConnection && wsConnection.readyState === WebSocket.OPEN) {
         console.log('Sending call-end message to:', currentCall.contactId);
@@ -2285,6 +2352,10 @@ function updateAudioOutputButton() {
 
 // Setup call controls
 document.addEventListener('DOMContentLoaded', () => {
+    // Incoming call buttons
+    document.getElementById('accept-call-btn').addEventListener('click', acceptIncomingCall);
+    document.getElementById('decline-call-btn').addEventListener('click', declineIncomingCall);
+
     document.getElementById('end-call-btn').addEventListener('click', endCall);
 
     document.getElementById('mute-btn').addEventListener('click', () => {
