@@ -16,4 +16,6 @@ VOLUME ["/data"]
 ENV PORT=""
 ENV DISABLE_TURN=""
 ENV FRONTEND_URI=""
+ENV DATABASE_PATH="/data/familycall.db"
+ENV RESET_DB=""
 ENTRYPOINT ["familycall"]

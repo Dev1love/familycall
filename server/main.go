@@ -81,6 +81,12 @@ func main() {
 		}
 	}
 
+	// Reset database if requested (useful for fresh deployments)
+	if os.Getenv("RESET_DB") == "true" {
+		log.Println("RESET_DB=true: removing existing database at", cfg.DatabasePath)
+		os.Remove(cfg.DatabasePath)
+	}
+
 	// Initialize database
 	db, err := database.Initialize(cfg.DatabasePath)
 	if err != nil {
