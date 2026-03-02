@@ -23,6 +23,9 @@ RUN CGO_ENABLED=1 go build -o familycall .
 FROM alpine:3.19
 RUN apk add --no-cache ca-certificates
 COPY --from=backend /app/familycall /usr/local/bin/
-EXPOSE 443 3478/udp
+EXPOSE 443 8080 3478/udp
 VOLUME ["/data"]
+ENV PORT=""
+ENV DISABLE_TURN=""
+ENV FRONTEND_URI=""
 ENTRYPOINT ["familycall"]
