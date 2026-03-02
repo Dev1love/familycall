@@ -13,9 +13,4 @@ export default defineConfig({
       '/ws': { target: 'ws://localhost:8080', ws: true },
     },
   },
-  test: {
-    environment: 'happy-dom',
-    globals: true,
-    setupFiles: ['./src/test/setup.ts'],
-  },
 })
